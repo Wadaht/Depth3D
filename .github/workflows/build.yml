@@ -17,6 +17,8 @@ jobs:
           ls /Applications/ | grep Xcode
           sudo xcode-select -s /Applications/Xcode_16.2.app || sudo xcode-select -s /Applications/Xcode_16.1.app || sudo xcode-select -s /Applications/Xcode_16.0.app || sudo xcode-select -s "$(ls -d /Applications/Xcode_16*.app | head -1)"
           xcodebuild -version
+          # Install iOS simulator runtime to fix actool errors
+          xcodebuild -downloadPlatform iOS || true
 
       - name: Install XcodeGen
         run: brew install xcodegen
@@ -24,28 +26,29 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
-      - name: Build archive
+      - name: Build app
         run: |
-          xcodebuild archive \
+          mkdir -p build
+          xcodebuild build \
             -project Depth3D.xcodeproj \
             -scheme Depth3D \
             -sdk iphoneos \
             -destination "generic/platform=iOS" \
-            -archivePath build/Depth3D.xcarchive \
+            -derivedDataPath build/DerivedData \
             CODE_SIGN_IDENTITY="-" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
             AD_HOC_CODE_SIGNING_ALLOWED=YES \
             ARCHS=arm64 \
-            SKIP_INSTALL=NO \
+            ONLY_ACTIVE_ARCH=NO \
             2>&1 | tee build/build_log.txt || true
           # Write errors to job summary
-          echo "## Build Errors" >> $GITHUB_STEP_SUMMARY
+          echo "## Build Output" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          grep -E "(error:|warning:|fatal)" build/build_log.txt | head -80 >> $GITHUB_STEP_SUMMARY || true
+          grep -E "(error:|BUILD SUCCEEDED|BUILD FAILED)" build/build_log.txt | head -80 >> $GITHUB_STEP_SUMMARY || true
           echo '```' >> $GITHUB_STEP_SUMMARY
-          # Fail if there were errors
-          if grep -q "BUILD FAILED\|** ARCHIVE FAILED **" build/build_log.txt; then exit 1; fi
+          # Fail if build failed
+          if grep -q "BUILD FAILED\|** BUILD FAILED **" build/build_log.txt; then exit 1; fi
 
       - name: Upload build log
         if: always()
@@ -57,8 +60,10 @@ jobs:
 
       - name: Create IPA
         run: |
+          APP_PATH=$(find build/DerivedData -name "Depth3D.app" -type d | head -1)
+          echo "Found app at: $APP_PATH"
           mkdir -p build/Payload
-          cp -r build/Depth3D.xcarchive/Products/Applications/Depth3D.app build/Payload/
+          cp -r "$APP_PATH" build/Payload/
           cd build && zip -r Depth3D.ipa Payload
 
       - name: Upload IPA artifact
