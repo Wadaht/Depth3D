@@ -1,4 +1,5 @@
 import SwiftUI
+import SceneKit
 
 struct ExportSheet: View {
     let scan: Scan
