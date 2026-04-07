@@ -35,7 +35,23 @@ jobs:
             CODE_SIGN_IDENTITY="-" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
-            AD_HOC_CODE_SIGNING_ALLOWED=YES
+            AD_HOC_CODE_SIGNING_ALLOWED=YES \
+            2>&1 | tee build/build_log.txt || true
+          # Write errors to job summary
+          echo "## Build Errors" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          grep -E "(error:|warning:|fatal)" build/build_log.txt | head -80 >> $GITHUB_STEP_SUMMARY || true
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          # Fail if there were errors
+          if grep -q "BUILD FAILED\|** ARCHIVE FAILED **" build/build_log.txt; then exit 1; fi
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build/build_log.txt
+          retention-days: 7
 
       - name: Create IPA
         run: |
