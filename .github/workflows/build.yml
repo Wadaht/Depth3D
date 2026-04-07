@@ -36,6 +36,8 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
             AD_HOC_CODE_SIGNING_ALLOWED=YES \
+            ARCHS=arm64 \
+            SKIP_INSTALL=NO \
             2>&1 | tee build/build_log.txt || true
           # Write errors to job summary
           echo "## Build Errors" >> $GITHUB_STEP_SUMMARY
