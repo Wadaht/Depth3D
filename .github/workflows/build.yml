@@ -14,11 +14,8 @@ jobs:
 
       - name: Select Xcode 16
         run: |
-          ls /Applications/ | grep Xcode
           sudo xcode-select -s /Applications/Xcode_16.2.app || sudo xcode-select -s /Applications/Xcode_16.1.app || sudo xcode-select -s /Applications/Xcode_16.0.app || sudo xcode-select -s "$(ls -d /Applications/Xcode_16*.app | head -1)"
           xcodebuild -version
-          # Install iOS simulator runtime to fix actool errors
-          xcodebuild -downloadPlatform iOS || true
 
       - name: Install XcodeGen
         run: brew install xcodegen
@@ -26,29 +23,35 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
-      - name: Build app
+      - name: Build for device
         run: |
           mkdir -p build
-          xcodebuild build \
+          xcodebuild clean build \
             -project Depth3D.xcodeproj \
             -scheme Depth3D \
             -sdk iphoneos \
-            -destination "generic/platform=iOS" \
+            -configuration Release \
             -derivedDataPath build/DerivedData \
-            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
-            AD_HOC_CODE_SIGNING_ALLOWED=YES \
             ARCHS=arm64 \
+            VALID_ARCHS=arm64 \
             ONLY_ACTIVE_ARCH=NO \
-            2>&1 | tee build/build_log.txt || true
-          # Write errors to job summary
-          echo "## Build Output" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          grep -E "(error:|BUILD SUCCEEDED|BUILD FAILED)" build/build_log.txt | head -80 >> $GITHUB_STEP_SUMMARY || true
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          # Fail if build failed
-          if grep -q "BUILD FAILED\|** BUILD FAILED **" build/build_log.txt; then exit 1; fi
+            ENABLE_PREVIEWS=NO \
+            2>&1 | tee build/build_log.txt
+
+          # Show what was built
+          echo "## Built products:" >> $GITHUB_STEP_SUMMARY
+          find build/DerivedData/Build/Products -name "*.app" -type d >> $GITHUB_STEP_SUMMARY 2>/dev/null || true
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Show app contents
+          APP_PATH=$(find build/DerivedData/Build/Products/Release-iphoneos -name "Depth3D.app" -type d 2>/dev/null | head -1)
+          if [ -n "$APP_PATH" ]; then
+            echo "App contents:" >> $GITHUB_STEP_SUMMARY
+            ls -la "$APP_PATH/" >> $GITHUB_STEP_SUMMARY
+          fi
 
       - name: Upload build log
         if: always()
@@ -60,8 +63,21 @@ jobs:
 
       - name: Create IPA
         run: |
-          APP_PATH=$(find build/DerivedData -name "Depth3D.app" -type d | head -1)
-          echo "Found app at: $APP_PATH"
+          APP_PATH=$(find build/DerivedData/Build/Products/Release-iphoneos -name "Depth3D.app" -type d | head -1)
+          if [ -z "$APP_PATH" ]; then
+            echo "ERROR: No .app found!"
+            find build/DerivedData/Build/Products -type d -name "*.app"
+            exit 1
+          fi
+          echo "Packaging: $APP_PATH"
+          ls -la "$APP_PATH/"
+
+          # Verify executable exists
+          if [ ! -f "$APP_PATH/Depth3D" ]; then
+            echo "ERROR: No executable found in .app bundle!"
+            exit 1
+          fi
+
           mkdir -p build/Payload
           cp -r "$APP_PATH" build/Payload/
           cd build && zip -r Depth3D.ipa Payload
