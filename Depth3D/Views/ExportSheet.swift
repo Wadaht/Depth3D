@@ -117,15 +117,10 @@ struct ExportSheet: View {
     // MARK: - Quick share (USDZ)
 
     private var shareButton: some View {
-        Button {
-            let url = store.modelURL(for: scan)
-            if FileManager.default.fileExists(atPath: url.path) {
-                shareURL = url
-                showShareSheet = true
-            }
-        } label: {
+        Button { export(as: .usdz) } label: {
             Label("Share USDZ via AirDrop, Messages...", systemImage: "square.and.arrow.up")
         }
+        .disabled(isExporting || scene == nil)
     }
 }
 

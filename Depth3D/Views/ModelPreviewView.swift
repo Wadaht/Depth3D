@@ -73,9 +73,20 @@ struct ModelPreviewView: View {
         let url = store.modelURL(for: scan)
         guard FileManager.default.fileExists(atPath: url.path) else { return }
         do {
-            let loaded = try SCNScene(url: url, options: [
-                .checkConsistency: true
-            ])
+            let loaded: SCNScene
+            if url.pathExtension == "scn" {
+                // Load .scn archive (preserves vertex colors)
+                let data = try Data(contentsOf: url)
+                guard let scene = try NSKeyedUnarchiver.unarchivedObject(ofClass: SCNScene.self, from: data) else {
+                    print("Failed to unarchive scene")
+                    return
+                }
+                loaded = scene
+            } else {
+                loaded = try SCNScene(url: url, options: [
+                    .checkConsistency: true
+                ])
+            }
             await MainActor.run { scene = loaded }
         } catch {
             print("Failed to load scene: \(error)")

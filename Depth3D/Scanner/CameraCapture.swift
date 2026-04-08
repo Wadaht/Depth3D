@@ -70,18 +70,21 @@ enum CameraColorSampler {
         // Transform to camera space
         let camPoint = capture.viewMatrix * SIMD4<Float>(worldPoint.x, worldPoint.y, worldPoint.z, 1.0)
 
-        // In ARKit camera intrinsics coordinate system, z > 0 means in front of camera
-        let depth = camPoint.z
+        // ARKit camera looks along -Z, so visible points have negative Z.
+        // Depth is the positive distance in front of the camera.
+        let depth = -camPoint.z
         guard depth > 0.05 else { return nil }
 
         // Project using intrinsics (column-major: [col][row])
+        // u maps from camera X (right) to pixel column
+        // v maps from camera -Y (up→down) to pixel row
         let fx = capture.intrinsics[0][0]
         let fy = capture.intrinsics[1][1]
         let cx = capture.intrinsics[2][0]
         let cy = capture.intrinsics[2][1]
 
         let u = fx * camPoint.x / depth + cx
-        let v = fy * camPoint.y / depth + cy
+        let v = fy * (-camPoint.y) / depth + cy
 
         let px = Int(u)
         let py = Int(v)

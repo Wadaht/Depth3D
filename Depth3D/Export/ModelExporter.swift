@@ -80,10 +80,10 @@ enum ModelExporter {
 
         var scan = Scan(name: name, vertexCount: totalVerts, faceCount: totalFaces)
 
-        // Export USDZ
+        // Save as .scn archive (preserves vertex colors, unlike USDZ)
         let modelURL = store.scansDirectory.appendingPathComponent(scan.modelFilename)
-        let success = scene.write(to: modelURL, options: nil, delegate: nil, progressHandler: nil)
-        guard success else { throw ExportError.writeFailed }
+        let data = try NSKeyedArchiver.archivedData(withRootObject: scene, requiringSecureCoding: false)
+        try data.write(to: modelURL, options: .atomic)
 
         // Capture thumbnail
         let thumbFilename = "\(scan.id.uuidString)_thumb.png"

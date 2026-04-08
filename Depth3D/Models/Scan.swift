@@ -16,7 +16,7 @@ struct Scan: Identifiable, Codable, Hashable {
         self.date = Date()
         self.vertexCount = vertexCount
         self.faceCount = faceCount
-        self.modelFilename = "\(id.uuidString).usdz"
+        self.modelFilename = "\(id.uuidString).scn"
     }
 
     var formattedDate: String {
