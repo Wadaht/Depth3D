@@ -116,32 +116,42 @@ enum MeshProcessor {
     ) -> SCNGeometry {
         let g = anchor.geometry
 
-        // Vertices
+        // Copy vertex data from Metal buffer → Data (survives NSKeyedArchiver)
+        let vertexData = Data(
+            bytes: g.vertices.buffer.contents().advanced(by: g.vertices.offset),
+            count: g.vertices.count * g.vertices.stride
+        )
         let vertexSource = SCNGeometrySource(
-            buffer: g.vertices.buffer,
-            vertexFormat: g.vertices.format,
+            data: vertexData,
             semantic: .vertex,
-            vertexCount: g.vertices.count,
-            dataOffset: g.vertices.offset,
+            vectorCount: g.vertices.count,
+            usesFloatComponents: true,
+            componentsPerVector: 3,
+            bytesPerComponent: MemoryLayout<Float>.size,
+            dataOffset: 0,
             dataStride: g.vertices.stride
         )
 
-        // Normals
+        // Copy normal data from Metal buffer → Data
+        let normalData = Data(
+            bytes: g.normals.buffer.contents().advanced(by: g.normals.offset),
+            count: g.normals.count * g.normals.stride
+        )
         let normalSource = SCNGeometrySource(
-            buffer: g.normals.buffer,
-            vertexFormat: g.normals.format,
+            data: normalData,
             semantic: .normal,
-            vertexCount: g.normals.count,
-            dataOffset: g.normals.offset,
+            vectorCount: g.normals.count,
+            usesFloatComponents: true,
+            componentsPerVector: 3,
+            bytesPerComponent: MemoryLayout<Float>.size,
+            dataOffset: 0,
             dataStride: g.normals.stride
         )
 
-        // Faces
-        let faceBuf = g.faces.buffer
+        // Copy face data from Metal buffer → Data
         let faceData = Data(
-            bytesNoCopy: faceBuf.contents(),
-            count: g.faces.count * g.faces.indexCountPerPrimitive * g.faces.bytesPerIndex,
-            deallocator: .none
+            bytes: g.faces.buffer.contents(),
+            count: g.faces.count * g.faces.indexCountPerPrimitive * g.faces.bytesPerIndex
         )
         let element = SCNGeometryElement(
             data: faceData,
@@ -150,12 +160,12 @@ enum MeshProcessor {
             bytesPerIndex: g.faces.bytesPerIndex
         )
 
-        // Per-vertex colors from camera projection
+        // Per-vertex colors from camera projection (float RGBA for compatibility)
         let vertexPtr = g.vertices.buffer.contents()
             .advanced(by: g.vertices.offset)
         let vertexStride = g.vertices.stride
 
-        var colorBytes = [UInt8](repeating: 0, count: g.vertices.count * 4)
+        var colorFloats = [Float](repeating: 0, count: g.vertices.count * 4)
 
         for i in 0..<g.vertices.count {
             let localPos = vertexPtr
@@ -174,22 +184,25 @@ enum MeshProcessor {
             )
 
             let offset = i * 4
-            colorBytes[offset]     = color.r
-            colorBytes[offset + 1] = color.g
-            colorBytes[offset + 2] = color.b
-            colorBytes[offset + 3] = 255
+            colorFloats[offset]     = Float(color.r) / 255.0
+            colorFloats[offset + 1] = Float(color.g) / 255.0
+            colorFloats[offset + 2] = Float(color.b) / 255.0
+            colorFloats[offset + 3] = 1.0
         }
 
-        let colorData = Data(colorBytes)
+        let colorData = Data(
+            bytes: colorFloats,
+            count: colorFloats.count * MemoryLayout<Float>.size
+        )
         let colorSource = SCNGeometrySource(
             data: colorData,
             semantic: .color,
             vectorCount: g.vertices.count,
-            usesFloatComponents: false,
+            usesFloatComponents: true,
             componentsPerVector: 4,
-            bytesPerComponent: 1,
+            bytesPerComponent: MemoryLayout<Float>.size,
             dataOffset: 0,
-            dataStride: 4
+            dataStride: MemoryLayout<Float>.size * 4
         )
 
         let scnGeom = SCNGeometry(
@@ -199,7 +212,7 @@ enum MeshProcessor {
 
         let material = SCNMaterial()
         material.isDoubleSided = true
-        material.lightingModel = .constant  // Use vertex colors directly, no shading
+        material.lightingModel = .phong
         scnGeom.materials = [material]
 
         return scnGeom

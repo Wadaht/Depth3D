@@ -62,17 +62,18 @@ struct SceneKitView: UIViewRepresentable {
 
         scene.rootNode.enumerateChildNodes { node, _ in
             guard let geometry = node.geometry else { return }
+            // Check if geometry has per-vertex colors — don't override diffuse if so
+            let hasVertexColors = geometry.sources(for: .color).isEmpty == false
             for material in geometry.materials {
                 switch mode {
                 case .solid:
                     material.fillMode = .fill
-                    material.diffuse.contents = material.diffuse.contents ?? UIColor.systemGray3
+                    if !hasVertexColors {
+                        material.diffuse.contents = material.diffuse.contents ?? UIColor.systemGray3
+                    }
                 case .wireframe:
                     material.fillMode = .lines
                 case .points:
-                    material.fillMode = .fill
-                    material.diffuse.contents = UIColor.clear
-                    // SceneKit doesn't have native point mode; approximate with very thin wireframe
                     material.fillMode = .lines
                 }
             }
