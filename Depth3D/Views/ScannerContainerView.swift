@@ -61,6 +61,7 @@ struct ScannerContainerView: View {
             do {
                 let scan = try await ModelExporter.saveScan(
                     anchors: scanner.meshAnchors,
+                    captures: scanner.cameraCaptures,
                     name: name,
                     store: store
                 )

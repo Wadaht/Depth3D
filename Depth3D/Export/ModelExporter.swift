@@ -65,10 +65,11 @@ enum ModelExporter {
 
     static func saveScan(
         anchors: [ARMeshAnchor],
+        captures: [CameraCapture] = [],
         name: String,
         store: ScanStore
     ) async throws -> Scan {
-        let scene = MeshProcessor.buildScene(from: anchors)
+        let scene = MeshProcessor.buildColoredScene(from: anchors, captures: captures)
 
         // Compute stats
         var totalVerts = 0, totalFaces = 0

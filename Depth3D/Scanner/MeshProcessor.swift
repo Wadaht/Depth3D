@@ -76,7 +76,136 @@ enum MeshProcessor {
             scene.rootNode.addChildNode(node)
         }
 
-        // Add ambient light so the model is visible in preview
+        addLights(to: scene)
+        return scene
+    }
+
+    // MARK: - Build scene with real camera colors projected onto vertices
+
+    static func buildColoredScene(from anchors: [ARMeshAnchor], captures: [CameraCapture]) -> SCNScene {
+        // If no captures available, fall back to classification coloring
+        guard !captures.isEmpty else { return buildScene(from: anchors) }
+
+        let scene = SCNScene()
+
+        // Pre-build bitmap samplers for all captures (done once)
+        let samplers = captures.compactMap { BitmapSampler(image: $0.image) }
+        let validCaptures = zip(captures, samplers).map { $0 }
+
+        // Use only captures that produced valid samplers
+        let captureList = validCaptures.map(\.0)
+        let samplerList = validCaptures.map(\.1)
+
+        for anchor in anchors {
+            let geom = coloredGeometry(from: anchor, captures: captureList, samplers: samplerList)
+            let node = SCNNode(geometry: geom)
+            node.simdTransform = anchor.transform
+            scene.rootNode.addChildNode(node)
+        }
+
+        addLights(to: scene)
+        return scene
+    }
+
+    // MARK: - Geometry with per-vertex color from camera projections
+
+    static func coloredGeometry(
+        from anchor: ARMeshAnchor,
+        captures: [CameraCapture],
+        samplers: [BitmapSampler]
+    ) -> SCNGeometry {
+        let g = anchor.geometry
+
+        // Vertices
+        let vertexSource = SCNGeometrySource(
+            buffer: g.vertices.buffer,
+            vertexFormat: g.vertices.format,
+            semantic: .vertex,
+            vertexCount: g.vertices.count,
+            dataOffset: g.vertices.offset,
+            dataStride: g.vertices.stride
+        )
+
+        // Normals
+        let normalSource = SCNGeometrySource(
+            buffer: g.normals.buffer,
+            vertexFormat: g.normals.format,
+            semantic: .normal,
+            vertexCount: g.normals.count,
+            dataOffset: g.normals.offset,
+            dataStride: g.normals.stride
+        )
+
+        // Faces
+        let faceBuf = g.faces.buffer
+        let faceData = Data(
+            bytesNoCopy: faceBuf.contents(),
+            count: g.faces.count * g.faces.indexCountPerPrimitive * g.faces.bytesPerIndex,
+            deallocator: .none
+        )
+        let element = SCNGeometryElement(
+            data: faceData,
+            primitiveType: .triangles,
+            primitiveCount: g.faces.count,
+            bytesPerIndex: g.faces.bytesPerIndex
+        )
+
+        // Per-vertex colors from camera projection
+        let vertexPtr = g.vertices.buffer.contents()
+            .advanced(by: g.vertices.offset)
+        let vertexStride = g.vertices.stride
+
+        var colorBytes = [UInt8](repeating: 0, count: g.vertices.count * 4)
+
+        for i in 0..<g.vertices.count {
+            let localPos = vertexPtr
+                .advanced(by: i * vertexStride)
+                .bindMemory(to: SIMD3<Float>.self, capacity: 1)
+                .pointee
+
+            // Transform vertex to world space
+            let world4 = anchor.transform * SIMD4<Float>(localPos.x, localPos.y, localPos.z, 1.0)
+            let worldPos = SIMD3<Float>(world4.x, world4.y, world4.z)
+
+            let color = CameraColorSampler.sampleColor(
+                worldPoint: worldPos,
+                captures: captures,
+                samplers: samplers
+            )
+
+            let offset = i * 4
+            colorBytes[offset]     = color.r
+            colorBytes[offset + 1] = color.g
+            colorBytes[offset + 2] = color.b
+            colorBytes[offset + 3] = 255
+        }
+
+        let colorData = Data(colorBytes)
+        let colorSource = SCNGeometrySource(
+            data: colorData,
+            semantic: .color,
+            vectorCount: g.vertices.count,
+            usesFloatComponents: false,
+            componentsPerVector: 4,
+            bytesPerComponent: 1,
+            dataOffset: 0,
+            dataStride: 4
+        )
+
+        let scnGeom = SCNGeometry(
+            sources: [vertexSource, normalSource, colorSource],
+            elements: [element]
+        )
+
+        let material = SCNMaterial()
+        material.isDoubleSided = true
+        material.lightingModel = .constant  // Use vertex colors directly, no shading
+        scnGeom.materials = [material]
+
+        return scnGeom
+    }
+
+    private static func addLights(to scene: SCNScene) {
         let ambientLight = SCNNode()
         ambientLight.light = SCNLight()
         ambientLight.light?.type = .ambient
@@ -91,8 +220,6 @@ enum MeshProcessor {
         directional.light?.color = UIColor.white
         directional.eulerAngles = SCNVector3(-Float.pi / 4, Float.pi / 4, 0)
         scene.rootNode.addChildNode(directional)
-
-        return scene
     }
 
     // MARK: - Per-anchor color by dominant classification
