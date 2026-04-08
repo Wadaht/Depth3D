@@ -31,8 +31,9 @@ enum MeshProcessor {
         )
 
         // Faces
+        let faceBuf = g.faces.buffer
         let faceData = Data(
-            bytesNoCopy: g.faces.buffer.contents().advanced(by: g.faces.offset),
+            bytesNoCopy: faceBuf.contents(),
             count: g.faces.count * g.faces.indexCountPerPrimitive * g.faces.bytesPerIndex,
             deallocator: .none
         )

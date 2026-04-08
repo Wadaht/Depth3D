@@ -1,5 +1,6 @@
 import ARKit
 import SceneKit
+import SceneKit.ModelIO
 import ModelIO
 import MetalKit
 import UIKit
@@ -52,7 +53,8 @@ enum ModelExporter {
             guard let device = MTLCreateSystemDefaultDevice() else {
                 throw ExportError.noMetalDevice
             }
-            let asset = MDLAsset(scnScene: scene, bufferAllocator: MTKMeshBufferAllocator(device: device))
+            let allocator = MTKMeshBufferAllocator(device: device)
+            let asset = MDLAsset(scnScene: scene, bufferAllocator: allocator)
             try asset.export(to: url)
         }
 

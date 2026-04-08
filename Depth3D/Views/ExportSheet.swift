@@ -14,64 +14,76 @@ struct ExportSheet: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                Section {
-                    ForEach(ExportFormat.allCases) { format in
-                        Button { export(as: format) } label: {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(format.rawValue)
-                                        .font(.headline)
-                                    Text(format.description)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                if isExporting {
-                                    ProgressView()
-                                } else {
-                                    Image(systemName: "arrow.down.circle")
-                                        .foregroundStyle(.accent)
-                                }
-                            }
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(isExporting || scene == nil)
+            listContent
+                .navigationTitle("Export")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Done") { dismiss() }
                     }
-                } header: {
-                    Text("Export Format")
-                } footer: {
-                    Text("USDZ files can be viewed directly in iOS Files, Messages, and Safari via Quick Look.")
                 }
+                .alert("Export Failed", isPresented: hasError) {
+                    Button("OK") { exportError = nil }
+                } message: {
+                    Text(exportError ?? "")
+                }
+                .sheet(isPresented: $showShareSheet) {
+                    if let url = shareURL {
+                        ShareSheet(items: [url])
+                    }
+                }
+        }
+    }
 
-                Section {
-                    shareButton
-                } header: {
-                    Text("Quick Share")
+    private var hasError: Binding<Bool> {
+        Binding(
+            get: { exportError != nil },
+            set: { if !$0 { exportError = nil } }
+        )
+    }
+
+    private var listContent: some View {
+        List {
+            Section {
+                ForEach(ExportFormat.allCases) { format in
+                    formatRow(format)
                 }
+            } header: {
+                Text("Export Format")
+            } footer: {
+                Text("USDZ files can be viewed directly in iOS Files, Messages, and Safari via Quick Look.")
             }
-            .navigationTitle("Export")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") { dismiss() }
-                }
-            }
-            .alert("Export Failed", isPresented: .init(
-                get: { exportError != nil },
-                set: { if !$0 { exportError = nil } }
-            )) {
-                Button("OK") {}
-            } message: {
-                Text(exportError ?? "")
-            }
-            .sheet(isPresented: $showShareSheet) {
-                if let url = shareURL {
-                    ShareSheet(items: [url])
-                }
+
+            Section {
+                shareButton
+            } header: {
+                Text("Quick Share")
             }
         }
+    }
+
+    private func formatRow(_ format: ExportFormat) -> some View {
+        Button { export(as: format) } label: {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(format.rawValue)
+                        .font(.headline)
+                    Text(format.description)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if isExporting {
+                    ProgressView()
+                } else {
+                    Image(systemName: "arrow.down.circle")
+                        .foregroundStyle(.blue)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(isExporting || scene == nil)
     }
 
     // MARK: - Export action
