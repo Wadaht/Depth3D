@@ -11,13 +11,13 @@ struct ModelPreviewView: View {
     enum ViewMode: String, CaseIterable {
         case solid     = "Solid"
         case wireframe = "Wireframe"
-        case points    = "Points"
+        case airplane  = "Airplane"
 
         var icon: String {
             switch self {
             case .solid:     return "cube.fill"
             case .wireframe: return "cube"
-            case .points:    return "circle.dotted"
+            case .airplane:  return "airplane"
             }
         }
     }
