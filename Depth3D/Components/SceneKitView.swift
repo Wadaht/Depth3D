@@ -63,18 +63,25 @@ struct SceneKitView: UIViewRepresentable {
         private var airplaneMinHeight: Float = 0.3
         private var airplaneMaxHeight: Float = 50
 
+        // Camera rotation angles (radians)
+        private var cameraPitch: Float = -Float.pi / 2  // starts looking straight down
+        private var cameraYaw: Float = 0
+
         func setInitialHeight(_ height: Float, extent: Float) {
             airplaneHeight = height
             airplaneMinHeight = max(extent * 0.1, 0.2)
             airplaneMaxHeight = height * 3
         }
 
+        func resetOrientation() {
+            cameraPitch = -Float.pi / 2
+            cameraYaw = 0
+        }
+
         @objc func handlePinch(_ gesture: UIPinchGestureRecognizer) {
             guard let camNode = airplaneCamera else { return }
 
             if gesture.state == .changed {
-                // Scale < 1 = pinch in = move closer (lower height)
-                // Scale > 1 = pinch out = move away (higher height)
                 let factor = Float(1.0 / gesture.scale)
                 let newHeight = (airplaneHeight * factor)
                     .clamped(to: airplaneMinHeight...airplaneMaxHeight)
@@ -90,10 +97,17 @@ struct SceneKitView: UIViewRepresentable {
 
             if gesture.state == .changed {
                 let translation = gesture.translation(in: view)
-                // Move speed proportional to height (higher = faster pan)
-                let speed = airplaneHeight * 0.002
-                camNode.position.x -= Float(translation.x) * speed
-                camNode.position.z -= Float(translation.y) * speed
+                let sensitivity: Float = 0.005
+
+                // Swipe left/right → rotate yaw (look left/right)
+                cameraYaw -= Float(translation.x) * sensitivity
+                // Swipe up/down → rotate pitch (look down/up)
+                cameraPitch -= Float(translation.y) * sensitivity
+
+                // Clamp pitch: straight down (-π/2) to horizontal (0)
+                cameraPitch = cameraPitch.clamped(to: -Float.pi / 2 ... -0.05)
+
+                camNode.eulerAngles = SCNVector3(cameraPitch, cameraYaw, 0)
                 gesture.setTranslation(.zero, in: view)
             }
         }
@@ -163,11 +177,13 @@ struct SceneKitView: UIViewRepresentable {
             coordinator.pinchGesture?.isEnabled = true
             coordinator.panGesture?.isEnabled = true
 
-            // Initialize height tracking
+            // Initialize height tracking and reset orientation
             if let airNode = coordinator.airplaneCamera {
                 let (minB, maxB) = scene.rootNode.boundingBox
                 let extent = max(maxB.x - minB.x, max(maxB.y - minB.y, maxB.z - minB.z))
                 coordinator.setInitialHeight(airNode.position.y, extent: extent)
+                coordinator.resetOrientation()
+                airNode.eulerAngles = SCNVector3(-Float.pi / 2, 0, 0)
             }
 
             SCNTransaction.begin()
