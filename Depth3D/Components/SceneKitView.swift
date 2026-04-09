@@ -19,10 +19,27 @@ struct SceneKitView: UIViewRepresentable {
         let (perspCam, airplaneCam) = createCameras(for: scene)
         context.coordinator.perspectiveCamera = perspCam
         context.coordinator.airplaneCamera = airplaneCam
+        context.coordinator.scnView = scnView
         scene.rootNode.addChildNode(perspCam)
         scene.rootNode.addChildNode(airplaneCam)
 
         scnView.pointOfView = perspCam
+
+        // Add custom gesture recognizers for airplane mode
+        let pinch = UIPinchGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePinch(_:)))
+        pinch.delegate = context.coordinator
+        scnView.addGestureRecognizer(pinch)
+        context.coordinator.pinchGesture = pinch
+        pinch.isEnabled = false
+
+        let pan = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePan(_:)))
+        pan.delegate = context.coordinator
+        pan.minimumNumberOfTouches = 1
+        pan.maximumNumberOfTouches = 1
+        scnView.addGestureRecognizer(pan)
+        context.coordinator.panGesture = pan
+        pan.isEnabled = false
+
         return scnView
     }
 
@@ -34,10 +51,56 @@ struct SceneKitView: UIViewRepresentable {
         Coordinator()
     }
 
-    final class Coordinator {
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
         var perspectiveCamera: SCNNode?
         var airplaneCamera: SCNNode?
         var currentMode: ModelPreviewView.ViewMode = .solid
+        weak var scnView: SCNView?
+        var pinchGesture: UIPinchGestureRecognizer?
+        var panGesture: UIPanGestureRecognizer?
+
+        private var airplaneHeight: Float = 0
+        private var airplaneMinHeight: Float = 0.3
+        private var airplaneMaxHeight: Float = 50
+
+        func setInitialHeight(_ height: Float, extent: Float) {
+            airplaneHeight = height
+            airplaneMinHeight = max(extent * 0.1, 0.2)
+            airplaneMaxHeight = height * 3
+        }
+
+        @objc func handlePinch(_ gesture: UIPinchGestureRecognizer) {
+            guard let camNode = airplaneCamera else { return }
+
+            if gesture.state == .changed {
+                // Scale < 1 = pinch in = move closer (lower height)
+                // Scale > 1 = pinch out = move away (higher height)
+                let factor = Float(1.0 / gesture.scale)
+                let newHeight = (airplaneHeight * factor)
+                    .clamped(to: airplaneMinHeight...airplaneMaxHeight)
+                airplaneHeight = newHeight
+                camNode.position.y = newHeight
+                gesture.scale = 1.0
+            }
+        }
+
+        @objc func handlePan(_ gesture: UIPanGestureRecognizer) {
+            guard let camNode = airplaneCamera,
+                  let view = scnView else { return }
+
+            if gesture.state == .changed {
+                let translation = gesture.translation(in: view)
+                // Move speed proportional to height (higher = faster pan)
+                let speed = airplaneHeight * 0.002
+                camNode.position.x -= Float(translation.x) * speed
+                camNode.position.z -= Float(translation.y) * speed
+                gesture.setTranslation(.zero, in: view)
+            }
+        }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+            true
+        }
     }
 
     // MARK: - Cameras
@@ -70,20 +133,16 @@ struct SceneKitView: UIViewRepresentable {
         )
         perspNode.look(at: center)
 
-        // Airplane camera (top-down orthographic)
+        // Airplane camera (top-down perspective with wide FOV)
         let airCamera = SCNCamera()
         airCamera.automaticallyAdjustsZRange = true
-        airCamera.usesOrthographicProjection = true
-        airCamera.orthographicScale = Double(max(extentX, extentZ) * 0.7)
+        airCamera.fieldOfView = 60
 
+        let airHeight = max(extent * 1.5, 1.0)
         let airNode = SCNNode()
         airNode.name = "airplaneCamera"
         airNode.camera = airCamera
-        airNode.position = SCNVector3(
-            center.x,
-            center.y + distance * 2,
-            center.z
-        )
+        airNode.position = SCNVector3(center.x, airHeight, center.z)
         airNode.eulerAngles = SCNVector3(-Float.pi / 2, 0, 0)  // Look straight down
 
         return (perspNode, airNode)
@@ -94,17 +153,33 @@ struct SceneKitView: UIViewRepresentable {
     private func applyViewMode(to scnView: SCNView, mode: ModelPreviewView.ViewMode, coordinator: Coordinator) {
         guard let scene = scnView.scene else { return }
 
-        // Switch camera for airplane mode
         let isAirplane = mode == .airplane
         let wasAirplane = coordinator.currentMode == .airplane
         coordinator.currentMode = mode
 
         if isAirplane && !wasAirplane {
+            // Entering airplane mode: disable built-in controls, enable custom gestures
+            scnView.allowsCameraControl = false
+            coordinator.pinchGesture?.isEnabled = true
+            coordinator.panGesture?.isEnabled = true
+
+            // Initialize height tracking
+            if let airNode = coordinator.airplaneCamera {
+                let (minB, maxB) = scene.rootNode.boundingBox
+                let extent = max(maxB.x - minB.x, max(maxB.y - minB.y, maxB.z - minB.z))
+                coordinator.setInitialHeight(airNode.position.y, extent: extent)
+            }
+
             SCNTransaction.begin()
             SCNTransaction.animationDuration = 0.4
             scnView.pointOfView = coordinator.airplaneCamera
             SCNTransaction.commit()
         } else if !isAirplane && wasAirplane {
+            // Leaving airplane mode: restore built-in controls
+            scnView.allowsCameraControl = true
+            coordinator.pinchGesture?.isEnabled = false
+            coordinator.panGesture?.isEnabled = false
+
             SCNTransaction.begin()
             SCNTransaction.animationDuration = 0.4
             scnView.pointOfView = coordinator.perspectiveCamera
@@ -127,5 +202,13 @@ struct SceneKitView: UIViewRepresentable {
                 }
             }
         }
+    }
+}
+
+// MARK: - Float clamping
+
+private extension Float {
+    func clamped(to range: ClosedRange<Float>) -> Float {
+        Swift.min(Swift.max(self, range.lowerBound), range.upperBound)
     }
 }
