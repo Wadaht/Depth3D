@@ -109,7 +109,7 @@ struct SceneKitView: UIViewRepresentable {
                 cameraPitch -= Float(translation.y) * sensitivity
 
                 // Clamp pitch: straight down (-π/2) to horizontal (0)
-                cameraPitch = cameraPitch.clamped(to: -Float.pi / 2 ... -0.05)
+                cameraPitch = cameraPitch.clamped(to: -Float.pi / 2 ... Float.pi / 2)
 
                 camNode.eulerAngles = SCNVector3(cameraPitch, cameraYaw, 0)
                 gesture.setTranslation(.zero, in: view)
