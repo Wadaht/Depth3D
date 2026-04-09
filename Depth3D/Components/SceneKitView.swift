@@ -82,11 +82,15 @@ struct SceneKitView: UIViewRepresentable {
             guard let camNode = airplaneCamera else { return }
 
             if gesture.state == .changed {
-                let factor = Float(1.0 / gesture.scale)
-                let newHeight = (airplaneHeight * factor)
-                    .clamped(to: airplaneMinHeight...airplaneMaxHeight)
-                airplaneHeight = newHeight
-                camNode.position.y = newHeight
+                // Move along the camera's forward direction (where it's looking)
+                let speed = Float(gesture.scale - 1.0) * airplaneHeight * 0.5
+                let forward = camNode.worldFront
+                camNode.position = SCNVector3(
+                    camNode.position.x + forward.x * speed,
+                    camNode.position.y + forward.y * speed,
+                    camNode.position.z + forward.z * speed
+                )
+                airplaneHeight = camNode.position.y
                 gesture.scale = 1.0
             }
         }
