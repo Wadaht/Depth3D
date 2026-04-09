@@ -82,8 +82,8 @@ struct SceneKitView: UIViewRepresentable {
             guard let camNode = airplaneCamera else { return }
 
             if gesture.state == .changed {
-                // Move along the camera's forward direction (where it's looking)
-                let speed = Float(gesture.scale - 1.0) * airplaneHeight * 0.5
+                // Move along the camera's forward direction (linear, constant speed)
+                let speed = Float(gesture.scale - 1.0) * 1.5
                 let forward = camNode.worldFront
                 camNode.position = SCNVector3(
                     camNode.position.x + forward.x * speed,
