@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>Depth3D</string>
+    <string>Laseris</string>
     <key>CFBundleDisplayName</key>
-    <string>Depth3D</string>
+    <string>Laseris</string>
     <key>CFBundleIdentifier</key>
     <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
     <key>CFBundleVersion</key>
@@ -23,7 +23,7 @@
         <string>arkit</string>
     </array>
     <key>NSCameraUsageDescription</key>
-    <string>Depth3D uses your camera and LiDAR sensor to create 3D scans of your surroundings.</string>
+    <string>Laseris uses your camera and LiDAR sensor to create 3D scans of your surroundings.</string>
     <key>UILaunchScreen</key>
     <dict/>
     <key>UISupportedInterfaceOrientations</key>
