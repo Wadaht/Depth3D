@@ -11,10 +11,8 @@ final class LiDARScanner: NSObject, ObservableObject {
     @Published var sessionError: String?
 
     /// Camera frames captured during scanning for vertex coloring.
-    private(set) var cameraCaptures: [CameraCapture] = []
-    private var lastCaptureTime: TimeInterval = 0
-    private let captureInterval: TimeInterval = 0.5
-    private let maxCaptures = 50
+    var cameraCaptures: [CameraCapture] = []
+    private let maxCaptures = 200
 
     // MARK: - AR Session
 
@@ -56,10 +54,22 @@ final class LiDARScanner: NSObject, ObservableObject {
         isScanning = false
     }
 
+    /// Add a camera capture. Thins evenly when over limit to maintain full coverage.
+    func addCapture(_ capture: CameraCapture) {
+        cameraCaptures.append(capture)
+        if cameraCaptures.count > maxCaptures {
+            // Remove every other capture to thin evenly across the scan
+            var thinned = [CameraCapture]()
+            for (i, cap) in cameraCaptures.enumerated() where i % 2 == 0 {
+                thinned.append(cap)
+            }
+            cameraCaptures = thinned
+        }
+    }
+
     func reset() {
         meshAnchors.removeAll()
         cameraCaptures.removeAll()
-        lastCaptureTime = 0
         vertexCount = 0
         faceCount = 0
         if isScanning {
@@ -97,40 +107,6 @@ extension LiDARScanner: ARSessionDelegate {
         let removed = Set(anchors.map(\.identifier))
         meshAnchors.removeAll { removed.contains($0.identifier) }
         recount()
-    }
-
-    func session(_ session: ARSession, didUpdate frame: ARFrame) {
-        guard isScanning else { return }
-        let now = frame.timestamp
-        guard now - lastCaptureTime >= captureInterval else { return }
-        lastCaptureTime = now
-
-        // Downsample and store camera frame for vertex coloring
-        let pixelBuffer = frame.capturedImage
-        // Scale intrinsics to match downsampled resolution
-        let scale: CGFloat = 0.5
-        guard let cgImage = CameraColorSampler.downsample(pixelBuffer, scale: scale) else { return }
-
-        var intrinsics = frame.camera.intrinsics
-        let s = Float(scale)
-        intrinsics[0][0] *= s  // fx
-        intrinsics[1][1] *= s  // fy
-        intrinsics[2][0] *= s  // cx
-        intrinsics[2][1] *= s  // cy
-
-        let capture = CameraCapture(
-            image: cgImage,
-            intrinsics: intrinsics,
-            viewMatrix: simd_inverse(frame.camera.transform),
-            imageWidth: cgImage.width,
-            imageHeight: cgImage.height
-        )
-        cameraCaptures.append(capture)
-
-        // Evict oldest if over limit
-        if cameraCaptures.count > maxCaptures {
-            cameraCaptures.removeFirst()
-        }
     }
 
     func session(_ session: ARSession, didFailWithError error: Error) {
