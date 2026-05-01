@@ -1,26 +1,14 @@
 import Foundation
+import CoreGraphics
 
-extension Float {
+extension Comparable {
     /// Constrain the value to the given closed range.
-    func clamped(to range: ClosedRange<Float>) -> Float {
-        min(max(self, range.lowerBound), range.upperBound)
-    }
-}
-
-extension Double {
-    func clamped(to range: ClosedRange<Double>) -> Double {
-        min(max(self, range.lowerBound), range.upperBound)
-    }
-}
-
-extension Int {
-    func clamped(to range: ClosedRange<Int>) -> Int {
-        min(max(self, range.lowerBound), range.upperBound)
-    }
-}
-
-extension CGFloat {
-    func clamped(to range: ClosedRange<CGFloat>) -> CGFloat {
-        min(max(self, range.lowerBound), range.upperBound)
+    /// Defined on `Comparable` rather than per-type so it applies to Float,
+    /// Double, Int, CGFloat, etc. without redeclaration. Uses `Swift.min` /
+    /// `Swift.max` explicitly because `Int.min` and `CGFloat.minimum` are
+    /// static *properties* that shadow the unqualified global functions
+    /// inside an extension body.
+    func clamped(to range: ClosedRange<Self>) -> Self {
+        Swift.min(Swift.max(self, range.lowerBound), range.upperBound)
     }
 }

@@ -544,7 +544,7 @@ enum MeshProcessor {
         case .seat:    return "seat"
         case .window:  return "window"
         case .door:    return "door"
-        case .none, .some(_): return "other"
+        default:       return "other"
         }
     }
 

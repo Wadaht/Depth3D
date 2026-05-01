@@ -185,7 +185,7 @@ final class ScanStore: ObservableObject {
         guard let meta = loadDraftMeta(),
               fm.fileExists(atPath: draftSCNURL.path) else { return nil }
 
-        var scan = Scan(
+        let scan = Scan(
             name: name,
             vertexCount: meta.vertexCount,
             faceCount: meta.faceCount

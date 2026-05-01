@@ -225,10 +225,5 @@ struct SceneKitView: UIViewRepresentable {
     }
 }
 
-// MARK: - Float clamping
-
-private extension Float {
-    func clamped(to range: ClosedRange<Float>) -> Float {
-        Swift.min(Swift.max(self, range.lowerBound), range.upperBound)
-    }
-}
+// `Float.clamped(to:)` is provided by the project-wide
+// `extension Comparable` in Depth3D/Extensions/MathExtensions.swift.
