@@ -19,3 +19,6 @@ Package.resolved
 # Misc
 *.swp
 *~
+
+# Claude Code personal settings (hooks etc. — keep local, don't share)
+.claude/settings.local.json
