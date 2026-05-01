@@ -3,17 +3,39 @@ import SwiftUI
 struct HomeView: View {
     @EnvironmentObject var store: ScanStore
     @Binding var showScanner: Bool
+    @State private var showSettings = false
+    @State private var searchText = ""
+    @State private var showRecoverDraft = false
+    @State private var draftMeta: DraftScanMeta?
+
+    private var filteredScans: [Scan] {
+        let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return store.scans }
+        return store.scans.filter { $0.name.localizedCaseInsensitiveContains(q) }
+    }
 
     var body: some View {
         Group {
             if store.scans.isEmpty {
                 emptyState
+            } else if filteredScans.isEmpty {
+                noResultsState
             } else {
                 scanList
             }
         }
         .navigationTitle("My Scans")
+        .searchable(
+            text: $searchText,
+            placement: .navigationBarDrawer(displayMode: .automatic),
+            prompt: "Search scans"
+        )
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button { showSettings = true } label: {
+                    Image(systemName: "gearshape")
+                }
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button { showScanner = true } label: {
                     Image(systemName: "plus.circle.fill")
@@ -21,6 +43,46 @@ struct HomeView: View {
                 }
             }
         }
+        .sheet(isPresented: $showSettings) {
+            SettingsView()
+        }
+        .onAppear { checkForDraft() }
+        .alert("Recover Unsaved Scan?", isPresented: $showRecoverDraft) {
+            Button("Recover") {
+                if let meta = draftMeta {
+                    let name = "Recovered \(meta.formattedDate)"
+                    _ = store.recoverDraft(name: name)
+                }
+                draftMeta = nil
+            }
+            Button("Discard", role: .destructive) {
+                store.discardDraft()
+                draftMeta = nil
+            }
+        } message: {
+            if let meta = draftMeta {
+                Text("\(meta.formattedVertexCount) captured \(meta.formattedDate). Recover it as a new scan?")
+            }
+        }
+    }
+
+    private func checkForDraft() {
+        guard store.hasDraft, let meta = store.loadDraftMeta() else { return }
+        draftMeta = meta
+        showRecoverDraft = true
+    }
+
+    // MARK: - No-results state
+
+    private var noResultsState: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 40))
+                .foregroundStyle(.tertiary)
+            Text("No matches for \"\(searchText)\"")
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: - Empty state
@@ -55,13 +117,13 @@ struct HomeView: View {
 
     private var scanList: some View {
         List {
-            ForEach(store.scans) { scan in
+            ForEach(filteredScans) { scan in
                 NavigationLink(value: scan) {
                     ScanCard(scan: scan)
                 }
             }
             .onDelete { offsets in
-                for i in offsets { store.delete(scan: store.scans[i]) }
+                for i in offsets { store.delete(scan: filteredScans[i]) }
             }
         }
         .listStyle(.insetGrouped)

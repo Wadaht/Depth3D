@@ -1,0 +1,99 @@
+name: Build IPA
+
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']            # tag a commit `v1.2.3` to publish a release
+  workflow_dispatch:        # lets you trigger manually from the Actions tab
+
+permissions:
+  contents: write           # needed so the workflow can create Releases
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      # Free Apple IDs (Sideloadly) can't sign apps that request iCloud,
+      # so we strip the entitlements file before building.
+      - name: Strip iCloud entitlements
+        run: |
+          cat > Depth3D/Depth3D.entitlements << 'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict/>
+          </plist>
+          EOF
+
+      # Optional but nice — paints the app icon
+      - name: Generate app icon
+        run: swift Tools/generate_icon.swift
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      # Build without signing — Sideloadly will re-sign with your Apple ID later
+      - name: Archive (unsigned)
+        run: |
+          xcodebuild archive \
+            -project Depth3D.xcodeproj \
+            -scheme Depth3D \
+            -configuration Release \
+            -archivePath build/Depth3D.xcarchive \
+            -destination "generic/platform=iOS" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGN_ENTITLEMENTS="" \
+            ONLY_ACTIVE_ARCH=NO
+
+      - name: Package .app into Depth3D.ipa
+        run: |
+          mkdir -p Payload
+          cp -r build/Depth3D.xcarchive/Products/Applications/Depth3D.app Payload/
+          zip -qry Depth3D.ipa Payload
+          ls -lh Depth3D.ipa
+
+      # Always upload the build as a 14-day workflow artifact
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Depth3D-IPA
+          path: Depth3D.ipa
+          retention-days: 14
+
+      # On version tags, also publish a permanent GitHub Release
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: Depth3D.ipa
+          name: Depth3D ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          body: |
+            ## Depth3D / Laseris ${{ github.ref_name }}
+
+            Unsigned `.ipa` for sideloading via [Sideloadly](https://sideloadly.io)
+            or [AltStore](https://altstore.io).
+
+            **To install:**
+            1. Download `Depth3D.ipa` from the assets below
+            2. Open Sideloadly, plug in your iPhone via USB
+            3. Drag the `.ipa` into Sideloadly, sign in with your Apple ID, click **Start**
+            4. On the iPhone, **Settings → General → VPN & Device Management** → trust the developer profile
+
+            Requires an iPhone or iPad with a LiDAR sensor for scanning
+            (iPhone 12 Pro and later Pro models, or iPad Pro 2020+).
+
+            Built from commit `${{ github.sha }}`.

@@ -4,9 +4,14 @@ import SceneKit
 struct ModelPreviewView: View {
     let scan: Scan
     @EnvironmentObject var store: ScanStore
+    @Environment(\.dismiss) private var dismiss
     @State private var showExport = false
     @State private var viewMode: ViewMode = .solid
     @State private var scene: SCNScene?
+    @State private var showRename = false
+    @State private var renameText = ""
+    @State private var showDeleteConfirm = false
+    @State private var showStats = false
 
     enum ViewMode: String, CaseIterable {
         case solid     = "Solid"
@@ -22,6 +27,11 @@ struct ModelPreviewView: View {
         }
     }
 
+    /// Resolve the live scan from the store so renames reflect immediately.
+    private var liveScan: Scan {
+        store.scans.first(where: { $0.id == scan.id }) ?? scan
+    }
+
     var body: some View {
         ZStack {
             if let scene {
@@ -31,25 +41,66 @@ struct ModelPreviewView: View {
                 ProgressView("Loading model...")
             }
         }
-        .navigationTitle(scan.name)
+        .navigationTitle(liveScan.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button { showExport = true } label: {
-                    Image(systemName: "square.and.arrow.up")
+                Menu {
+                    Button {
+                        renameText = liveScan.name
+                        showRename = true
+                    } label: {
+                        Label("Rename", systemImage: "pencil")
+                    }
+                    Button { showStats = true } label: {
+                        Label("Scan Details", systemImage: "info.circle")
+                    }
+                    Button { showExport = true } label: {
+                        Label("Export", systemImage: "square.and.arrow.up")
+                    }
+                    Divider()
+                    Button(role: .destructive) {
+                        showDeleteConfirm = true
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
                 }
             }
             ToolbarItem(placement: .bottomBar) {
                 viewModePicker
             }
             ToolbarItem(placement: .bottomBar) {
-                Text(scan.formattedVertexCount)
+                Text(liveScan.formattedVertexCount)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
         }
         .sheet(isPresented: $showExport) {
-            ExportSheet(scan: scan, scene: scene)
+            ExportSheet(scan: liveScan, scene: scene)
+        }
+        .sheet(isPresented: $showStats) {
+            StatisticsView(scan: liveScan)
+        }
+        .alert("Rename Scan", isPresented: $showRename) {
+            TextField("Scan name", text: $renameText)
+            Button("Save") {
+                let trimmed = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty {
+                    store.rename(scan: liveScan, to: trimmed)
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+        .alert("Delete Scan?", isPresented: $showDeleteConfirm) {
+            Button("Delete", role: .destructive) {
+                store.delete(scan: liveScan)
+                dismiss()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This will permanently remove \"\(liveScan.name)\" and its 3D model file.")
         }
         .task { await loadScene() }
     }

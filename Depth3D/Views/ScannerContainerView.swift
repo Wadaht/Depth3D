@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ScannerContainerView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject var store: ScanStore
     @StateObject private var scanner = LiDARScanner()
 
@@ -12,25 +13,36 @@ struct ScannerContainerView: View {
 
     var body: some View {
         ZStack {
-            // AR camera + mesh overlay
-            ARScannerView(scanner: scanner)
-                .ignoresSafeArea()
+            if LiDARScanner.isLiDARAvailable {
+                // AR camera + mesh overlay
+                ARScannerView(scanner: scanner)
+                    .ignoresSafeArea()
 
-            // HUD overlay
-            ScanOverlayView(
-                scanner: scanner,
-                onClose: { dismiss() },
-                onReset: { scanner.reset() },
-                onFinish: { showSaveDialog = true }
-            )
+                // HUD overlay
+                ScanOverlayView(
+                    scanner: scanner,
+                    onClose: { dismiss() },
+                    onReset: { scanner.reset() },
+                    onFinish: { showSaveDialog = true }
+                )
 
-            // Saving overlay
-            if isSaving {
-                savingOverlay
+                // Saving overlay
+                if isSaving {
+                    savingOverlay
+                }
+            } else {
+                noLiDARView
             }
         }
-        .onAppear { scanner.start() }
+        .onAppear {
+            if LiDARScanner.isLiDARAvailable { scanner.start() }
+        }
         .onDisappear { scanner.stop() }
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .background {
+                autoSaveDraft()
+            }
+        }
         .statusBarHidden()
         .alert("Save Scan", isPresented: $showSaveDialog) {
             TextField("Scan name", text: $scanName)
@@ -53,7 +65,9 @@ struct ScannerContainerView: View {
     // MARK: - Saving
 
     private func performSave() {
-        let name = scanName.isEmpty ? "Scan \(store.scans.count + 1)" : scanName
+        let prefix = ScanSettings.shared.defaultNamePrefix
+        let trimmed = scanName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = trimmed.isEmpty ? "\(prefix) \(store.scans.count + 1)" : trimmed
         isSaving = true
         scanner.stop()
 
@@ -79,6 +93,21 @@ struct ScannerContainerView: View {
         }
     }
 
+    // MARK: - Draft auto-save on background
+
+    private func autoSaveDraft() {
+        guard scanner.isScanning, !scanner.meshAnchors.isEmpty else { return }
+        // Use geometry-only scene (fast, classification-colored) so the save
+        // fits within iOS's brief background window. Recovery brings back the
+        // mesh; users can re-scan if they need photographic textures.
+        let scene = MeshProcessor.buildScene(from: scanner.meshAnchors)
+        store.saveDraft(
+            scene: scene,
+            vertexCount: scanner.vertexCount,
+            faceCount: scanner.faceCount
+        )
+    }
+
     // MARK: - Saving overlay
 
     private var savingOverlay: some View {
@@ -94,6 +123,46 @@ struct ScannerContainerView: View {
             }
             .padding(40)
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20))
+        }
+    }
+
+    // MARK: - No-LiDAR fallback
+
+    private var noLiDARView: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            VStack(spacing: 24) {
+                Image(systemName: "sensor.tag.radiowaves.forward.fill")
+                    .font(.system(size: 64))
+                    .foregroundStyle(.orange)
+
+                Text("LiDAR Required")
+                    .font(.title.bold())
+                    .foregroundStyle(.white)
+
+                Text("Laseris uses your device's LiDAR sensor for accurate 3D scanning. This feature is available on:")
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.white.opacity(0.85))
+                    .padding(.horizontal)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Label("iPhone 12 Pro and later (Pro models)", systemImage: "iphone")
+                    Label("iPad Pro (2020) and later", systemImage: "ipad")
+                }
+                .font(.callout)
+                .foregroundStyle(.white.opacity(0.9))
+
+                Button {
+                    dismiss()
+                } label: {
+                    Text("Close")
+                        .frame(width: 200)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .padding(.top, 8)
+            }
+            .padding()
         }
     }
 }

@@ -1,5 +1,6 @@
 import ARKit
 import Combine
+import UIKit
 
 final class LiDARScanner: NSObject, ObservableObject {
     // MARK: - Published state
@@ -12,7 +13,7 @@ final class LiDARScanner: NSObject, ObservableObject {
 
     /// Camera frames captured during scanning for vertex coloring.
     var cameraCaptures: [CameraCapture] = []
-    private let maxCaptures = 200
+    private var maxCaptures: Int { ScanSettings.shared.maxCaptures }
 
     // MARK: - AR Session
 
@@ -25,6 +26,36 @@ final class LiDARScanner: NSObject, ObservableObject {
     override init() {
         super.init()
         session.delegate = self
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleMemoryWarning),
+            name: UIApplication.didReceiveMemoryWarningNotification,
+            object: nil
+        )
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    // MARK: - Memory pressure
+
+    @objc private func handleMemoryWarning() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            // Aggressively thin captures (keep every 4th) so spread is preserved
+            // but memory drops by ~75%.
+            if cameraCaptures.count > 30 {
+                var thinned: [CameraCapture] = []
+                thinned.reserveCapacity(cameraCaptures.count / 4 + 1)
+                for (i, cap) in cameraCaptures.enumerated() where i % 4 == 0 {
+                    thinned.append(cap)
+                }
+                cameraCaptures = thinned
+            }
+            sessionError = "Low memory — older camera captures thinned. Save your scan soon."
+        }
     }
 
     // MARK: - Controls

@@ -6,6 +6,7 @@ import MetalKit
 import UIKit
 
 enum ExportFormat: String, CaseIterable, Identifiable {
+    case scn  = "SCN"
     case usdz = "USDZ"
     case obj  = "OBJ"
     case stl  = "STL"
@@ -14,26 +15,34 @@ enum ExportFormat: String, CaseIterable, Identifiable {
 
     var fileExtension: String {
         switch self {
+        case .scn:  return "scn"
         case .usdz: return "usdz"
-        case .obj:  return "obj"
+        case .obj:  return "zip"   // OBJ + MTL + textures bundle
         case .stl:  return "stl"
         }
     }
 
     var mimeType: String {
         switch self {
+        case .scn:  return "application/octet-stream"
         case .usdz: return "model/vnd.usdz+zip"
-        case .obj:  return "text/plain"
+        case .obj:  return "application/zip"
         case .stl:  return "application/sla"
         }
     }
 
     var description: String {
         switch self {
-        case .usdz: return "Apple 3D format — viewable in Quick Look, AR, and Finder"
-        case .obj:  return "Universal format — works with Blender, Maya, Unity, etc."
-        case .stl:  return "3D printing format — ready for slicing software"
+        case .scn:  return "SceneKit native — full fidelity, best for opening on iOS/macOS"
+        case .usdz: return "Apple format — full color, viewable in Quick Look, Messages, and AR"
+        case .obj:  return "OBJ + MTL bundle (.zip) — full color for Blender, Maya, Unity"
+        case .stl:  return "3D printing format — geometry only, no colors"
         }
+    }
+
+    /// True if this format embeds material textures (colors) on export.
+    var preservesColors: Bool {
+        self == .scn || self == .usdz || self == .obj
     }
 }
 
@@ -45,11 +54,22 @@ enum ModelExporter {
         let url = directory.appendingPathComponent("\(filename).\(format.fileExtension)")
 
         switch format {
+        case .scn:
+            let data = try NSKeyedArchiver.archivedData(
+                withRootObject: scene,
+                requiringSecureCoding: false
+            )
+            try data.write(to: url, options: .atomic)
+
         case .usdz:
             let success = scene.write(to: url, options: nil, delegate: nil, progressHandler: nil)
             guard success else { throw ExportError.writeFailed }
 
-        case .obj, .stl:
+        case .obj:
+            // Custom exporter that emits OBJ + MTL + textures, bundled into a zip.
+            try OBJBundleExporter.export(scene: scene, to: url)
+
+        case .stl:
             guard let device = MTLCreateSystemDefaultDevice() else {
                 throw ExportError.noMetalDevice
             }
@@ -61,7 +81,7 @@ enum ModelExporter {
         return url
     }
 
-    // MARK: - Save scan: build scene, export USDZ, capture thumbnail
+    // MARK: - Save scan: build colored scene, archive, capture thumbnail
 
     static func saveScan(
         anchors: [ARMeshAnchor],
@@ -69,7 +89,10 @@ enum ModelExporter {
         name: String,
         store: ScanStore
     ) async throws -> Scan {
-        let scene = MeshProcessor.buildColoredScene(from: anchors, captures: captures)
+        // Use texture baking (camera frame as material) so USDZ export
+        // preserves real-world colors. Falls back to classification colors
+        // if no camera captures were collected.
+        let scene = MeshProcessor.buildTexturedScene(from: anchors, captures: captures)
 
         // Compute stats
         var totalVerts = 0, totalFaces = 0
@@ -77,15 +100,23 @@ enum ModelExporter {
             totalVerts += a.geometry.vertices.count
             totalFaces += a.geometry.faces.count
         }
+        let surfaceArea = MeshProcessor.surfaceArea(of: anchors)
+        let classCounts = MeshProcessor.classificationCounts(of: anchors)
 
-        var scan = Scan(name: name, vertexCount: totalVerts, faceCount: totalFaces)
+        var scan = Scan(
+            name: name,
+            vertexCount: totalVerts,
+            faceCount: totalFaces,
+            surfaceAreaMeters: surfaceArea,
+            classificationCounts: classCounts
+        )
 
         // Save as .scn archive (preserves vertex colors, unlike USDZ)
         let modelURL = store.scansDirectory.appendingPathComponent(scan.modelFilename)
         let data = try NSKeyedArchiver.archivedData(withRootObject: scene, requiringSecureCoding: false)
         try data.write(to: modelURL, options: .atomic)
 
-        // Capture thumbnail
+        // Capture thumbnail (after archiving so the temporary camera node isn't persisted)
         let thumbFilename = "\(scan.id.uuidString)_thumb.png"
         let thumbURL = store.scansDirectory.appendingPathComponent(thumbFilename)
         if let image = renderThumbnail(scene: scene, size: CGSize(width: 400, height: 400)) {
@@ -124,7 +155,12 @@ enum ModelExporter {
         scene.rootNode.addChildNode(cameraNode)
         renderer.pointOfView = cameraNode
 
-        return renderer.snapshot(atTime: 0, with: size, antialiasingMode: .multisampling4X)
+        let image = renderer.snapshot(atTime: 0, with: size, antialiasingMode: .multisampling4X)
+
+        // Clean up: remove the temporary camera node so the scene stays pristine
+        cameraNode.removeFromParentNode()
+
+        return image
     }
 
     // MARK: - Errors

@@ -7,6 +7,8 @@ struct ScanOverlayView: View {
     var onReset: () -> Void
     var onFinish: () -> Void
 
+    @State private var showTips = false
+
     var body: some View {
         VStack {
             topBar
@@ -17,6 +19,9 @@ struct ScanOverlayView: View {
             bottomBar
         }
         .padding()
+        .sheet(isPresented: $showTips) {
+            ScanTipsView()
+        }
     }
 
     // MARK: - Top bar
@@ -47,13 +52,23 @@ struct ScanOverlayView: View {
 
             Spacer()
 
-            // Reset button
-            Button(action: onReset) {
-                Image(systemName: "arrow.counterclockwise")
-                    .font(.body.bold())
-                    .foregroundStyle(.white)
-                    .frame(width: 36, height: 36)
-                    .background(.ultraThinMaterial, in: Circle())
+            // Trailing buttons (tips + reset)
+            HStack(spacing: 8) {
+                Button { showTips = true } label: {
+                    Image(systemName: "questionmark")
+                        .font(.body.bold())
+                        .foregroundStyle(.white)
+                        .frame(width: 36, height: 36)
+                        .background(.ultraThinMaterial, in: Circle())
+                }
+
+                Button(action: onReset) {
+                    Image(systemName: "arrow.counterclockwise")
+                        .font(.body.bold())
+                        .foregroundStyle(.white)
+                        .frame(width: 36, height: 36)
+                        .background(.ultraThinMaterial, in: Circle())
+                }
             }
         }
     }
